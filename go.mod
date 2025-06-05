@@ -1,6 +1,6 @@
 module agones.dev/agones
 
-go 1.23.0
+go 1.24.0
 
 require (
 	cloud.google.com/go/cloudbuild v1.15.1
@@ -97,6 +97,7 @@ require (
 	github.com/spf13/cast v1.3.0 // indirect
 	github.com/spf13/jwalterweatherman v1.0.0 // indirect
 	github.com/subosito/gotenv v1.2.0 // indirect
+	github.com/traefik/yaegi v0.16.1
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.58.0 // indirect

@@ -362,6 +362,12 @@ github.com/subosito/gotenv
 # github.com/tmc/grpc-websocket-proxy v0.0.0-20220101234140-673ab2c3ae75
 ## explicit; go 1.15
 github.com/tmc/grpc-websocket-proxy/wsproxy
+# github.com/traefik/yaegi v0.16.1
+## explicit; go 1.21
+github.com/traefik/yaegi/internal/unsafe2
+github.com/traefik/yaegi/interp
+github.com/traefik/yaegi/stdlib
+github.com/traefik/yaegi/stdlib/generic
 # github.com/x448/float16 v0.8.4
 ## explicit; go 1.11
 github.com/x448/float16

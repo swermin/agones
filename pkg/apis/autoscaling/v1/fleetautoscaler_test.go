@@ -617,6 +617,28 @@ func TestFleetAutoscalerChainValidateUpdate(t *testing.T) {
 	}
 }
 
+func TestFleetAutoscalerScript(t *testing.T) {
+	t.Parallel()
+
+	fas := defaultFixture()
+	fas.Spec.Policy.Type = ScriptPolicyType
+
+	fas.Spec.Policy.Script = &ScriptPolicy{
+		Script: `package main
+func Scale(r agones.FleetAutoscaleRequest) (agones.FleetAutoscaleResponse, error) {
+	println(r)
+	resp := agones.FleetAutoscaleResponse{}
+	resp.Replicas = r.Status.AllocatedReplicas + 1
+	resp.Scale = true
+	return resp, nil
+}`,
+	}
+
+	causes := fas.Validate()
+
+	assert.Len(t, causes, 0)
+}
+
 func TestFleetAutoscalerApplyDefaults(t *testing.T) {
 	fas := &FleetAutoscaler{}
 

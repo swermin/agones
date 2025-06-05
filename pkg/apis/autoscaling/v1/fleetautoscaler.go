@@ -18,7 +18,9 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"go/parser"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 
@@ -31,6 +33,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+
+	"github.com/traefik/yaegi/interp"
+	"github.com/traefik/yaegi/stdlib"
 )
 
 // +genclient
@@ -97,6 +102,8 @@ type FleetAutoscalerPolicy struct {
 	// Chain policy config params. Present only if FleetAutoscalerPolicyType = Chain.
 	// +optional
 	Chain ChainPolicy `json:"chain,omitempty"`
+
+	Script *ScriptPolicy `json:"script,omitempty"`
 }
 
 // FleetAutoscalerPolicyType is the policy for autoscaling
@@ -146,8 +153,14 @@ const (
 	// FixedIntervalSyncType is a simple fixed interval based strategy for trigger autoscaling
 	FixedIntervalSyncType FleetAutoscalerSyncType = "FixedInterval"
 
+	ScriptPolicyType FleetAutoscalerPolicyType = "Script"
+
 	defaultIntervalSyncSeconds int32 = 30
 )
+
+type ScriptPolicy struct {
+	Script string `json:"script"`
+}
 
 // BufferPolicy controls the desired behavior of the buffer policy.
 type BufferPolicy struct {
@@ -375,6 +388,9 @@ func (f *FleetAutoscalerPolicy) ValidatePolicy(fldPath *field.Path) field.ErrorL
 
 	case ChainPolicyType:
 		allErrs = f.Chain.ValidateChainPolicy(fldPath.Child("chain"))
+
+	case ScriptPolicyType:
+		allErrs = f.Script.ValidateScriptPolicy(fldPath.Child("script"))
 	}
 	return allErrs
 }
@@ -596,6 +612,100 @@ func (c *ChainPolicy) ValidateChainPolicy(fldPath *field.Path) field.ErrorList {
 		// Validate the chain entry's policy
 		allErrs = append(allErrs, entry.FleetAutoscalerPolicy.ValidatePolicy(fldPath.Index(i).Child("policy"))...)
 	}
+	return allErrs
+}
+
+func (s *ScriptPolicy) ValidateScriptPolicy2(fldPath *field.Path) field.ErrorList {
+	var allErrs field.ErrorList
+	if s == nil {
+		return append(allErrs, field.Required(fldPath, "script policy config params are missing"))
+	}
+	// if !runtime.FeatureEnabled(runtime.FeatureScheduledAutoscaler) {
+	// 	return append(allErrs, field.Forbidden(fldPath, "feature ScheduledAutoscaler must be enabled"))
+	// }
+
+	i := interp.New(interp.Options{})
+
+	//This allows use of standard libs
+	i.Use(stdlib.Symbols)
+
+	//This will make a 'custom' lib  available that can be imported and contains your Data struct
+	agones_symbols := make(map[string]map[string]reflect.Value)
+	agones_symbols["agones/agones"] = make(map[string]reflect.Value)
+	agones_symbols["agones/agones"]["FleetAutoscaleRequest"] = reflect.ValueOf((*FleetAutoscaleRequest)(nil))
+	agones_symbols["agones/agones"]["FleetAutoscaleResponse"] = reflect.ValueOf((*FleetAutoscaleResponse)(nil))
+
+	i.Use(agones_symbols)
+
+	i.ImportUsed()
+
+	file, err := parser.ParseFile(i.FileSet(), "_.go", s.Script, 0)
+	if err != nil {
+		panic(err)
+	}
+
+	if len(file.Imports) != 1 || len(file.Decls) != 5 {
+		panic("wrong number of imports or decls")
+	}
+
+	return allErrs
+}
+
+func (s *ScriptPolicy) ValidateScriptPolicy(fldPath *field.Path) field.ErrorList {
+	//s.ValidateScriptPolicy2(fldPath)
+	var allErrs field.ErrorList
+	if s == nil {
+		return append(allErrs, field.Required(fldPath, "script policy config params are missing"))
+	}
+	// if !runtime.FeatureEnabled(runtime.FeatureScheduledAutoscaler) {
+	// 	return append(allErrs, field.Forbidden(fldPath, "feature ScheduledAutoscaler must be enabled"))
+	// }
+
+	request := FleetAutoscaleRequest{
+		Name:      "test",
+		Namespace: "test",
+		Status: agonesv1.FleetStatus{
+			Replicas:          10,
+			ReadyReplicas:     5,
+			AllocatedReplicas: 3,
+		},
+	}
+
+	i := interp.New(interp.Options{})
+
+	// This allows use of standard libs
+	i.Use(stdlib.Symbols)
+
+	// This will make a 'custom' lib  available that can be imported and contains your Data struct
+	agones_symbols := make(map[string]map[string]reflect.Value)
+	agones_symbols["agones/agones"] = make(map[string]reflect.Value)
+	agones_symbols["agones/agones"]["FleetAutoscaleRequest"] = reflect.ValueOf((*FleetAutoscaleRequest)(nil))
+	agones_symbols["agones/agones"]["FleetAutoscaleResponse"] = reflect.ValueOf((*FleetAutoscaleResponse)(nil))
+
+	i.Use(agones_symbols)
+
+	i.ImportUsed()
+
+	program, err := i.Compile(s.Script)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = i.Eval(s.Script)
+	if err != nil {
+		panic(err)
+	}
+
+	v, err := i.Eval(fmt.Sprintf("%s.%s", program.PackageName(), "Scale"))
+	if err != nil {
+		panic(err)
+	}
+
+	bar := v.Interface().(func(FleetAutoscaleRequest) (FleetAutoscaleResponse, error))
+
+	r, _ := bar(request)
+	println(r.Replicas)
+
 	return allErrs
 }
 
